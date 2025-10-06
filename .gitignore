@@ -1,0 +1,10 @@
+prediction_plot.png
+historical_forecast_plot.png
+
+forecast_next.csv
+
+xau_lstm_best.h5
+xau_lstm_best.keras
+
+xau_lstm_final.keras
+xau_lstm_final.h5

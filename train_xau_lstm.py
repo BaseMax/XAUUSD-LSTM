@@ -7,6 +7,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 import matplotlib.pyplot as plt
 import tensorflow as tf
+from tensorflow.keras import Input
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
@@ -49,13 +50,15 @@ def create_sequences(data_array, seq_len):
     return np.array(X), np.array(y)
 
 def build_model(input_shape, dropout=0.2):
-    model = Sequential()
-    model.add(LSTM(128, return_sequences=True, input_shape=input_shape))
-    model.add(Dropout(dropout))
-    model.add(LSTM(64, return_sequences=False))
-    model.add(Dropout(dropout))
-    model.add(Dense(32, activation='relu'))
-    model.add(Dense(1))
+    model = Sequential([
+        Input(shape=input_shape),
+        LSTM(128, return_sequences=True),
+        Dropout(dropout),
+        LSTM(64, return_sequences=False),
+        Dropout(dropout),
+        Dense(32, activation='relu'),
+        Dense(1)
+    ])
     model.compile(optimizer='adam', loss='mse', metrics=['mae'])
     return model
 
@@ -68,7 +71,7 @@ def main(args):
         raise ValueError(f"Target column {args.target} not found in data columns: {list(data.columns)}")
     cols = [args.target] + [c for c in data.columns if c != args.target]
     data = data[cols]
-    data = data.fillna(method='ffill').dropna()
+    data = data.ffill().dropna()
     scaler = MinMaxScaler()
     scaled = scaler.fit_transform(data.values)
     seq_len = args.seq_len

@@ -12,7 +12,7 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
 def load_data(path, datetime_col=None):
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, sep=';')
     if datetime_col is None:
         for name in ['Datetime','Date','timestamp','time','date']:
             if name in df.columns:
@@ -132,7 +132,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', required=True, help='Path to CSV file')
+    parser.add_argument('--data', default='XAU_15m_data.csv', help='Path to CSV file')
     parser.add_argument('--datetime_col', default=None, help='Name of datetime column (infer if not given)')
     parser.add_argument('--target', default='Close', help='Target column name (default: Close)')
     parser.add_argument('--resample', default=None, help="Optional resample rule like '15T','H','D'. If None, use original index.")

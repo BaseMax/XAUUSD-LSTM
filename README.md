@@ -17,7 +17,7 @@ https://www.kaggle.com/datasets/novandraanugrah/xauusd-gold-price-historical-dat
 ## Running
 
 ```bash
-python train_xau_lstm.py --data "XAU_15m_data.csv" --datetime_col "Date" --target "Close" --seq_len 96 --epochs 30 --batch_size 64
+python train_xau_lstm.py --data "XAU_15m_data.csv" --datetime_col "Date" --target "Close" --seq_len 96 --epochs 5 --batch_size 64 --resample 15T
 ```
 
 Copyright 2025, Max Base

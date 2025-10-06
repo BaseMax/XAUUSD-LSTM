@@ -1,6 +1,4 @@
-import os
 import argparse
-from datetime import datetime
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
@@ -67,25 +65,32 @@ def main(args):
     df = load_data(args.data, datetime_col=args.datetime_col)
     data, feature_cols = preprocess(df, target_col=args.target, resample=args.resample)
     print("Using features:", feature_cols)
+
     if args.target not in data.columns:
         raise ValueError(f"Target column {args.target} not found in data columns: {list(data.columns)}")
     cols = [args.target] + [c for c in data.columns if c != args.target]
     data = data[cols]
     data = data.ffill().dropna()
+    data = data.tail(50000)
+
     scaler = MinMaxScaler()
     scaled = scaler.fit_transform(data.values)
+
     seq_len = args.seq_len
     X, y = create_sequences(scaled, seq_len)
     split = int(len(X) * (1 - args.val_split))
     X_train, X_val = X[:split], X[split:]
     y_train, y_val = y[:split], y[split:]
     print(f"Train samples: {len(X_train)}, Val samples: {len(X_val)}")
+
     model = build_model((seq_len, X.shape[2]), dropout=args.dropout)
     model.summary()
-    callbacks = []
-    ckpt_path = args.model_path or "xau_lstm_best.h5"
-    callbacks.append(ModelCheckpoint(ckpt_path, save_best_only=True, monitor='val_loss', verbose=1))
-    callbacks.append(EarlyStopping(monitor='val_loss', patience=args.patience, restore_best_weights=True, verbose=1))
+
+    callbacks = [
+        ModelCheckpoint(args.model_path or "xau_lstm_best.keras", save_best_only=True, monitor='val_loss', verbose=1),
+        EarlyStopping(monitor='val_loss', patience=args.patience, restore_best_weights=True, verbose=1)
+    ]
+
     history = model.fit(
         X_train, y_train,
         validation_data=(X_val, y_val),
@@ -94,18 +99,21 @@ def main(args):
         callbacks=callbacks,
         verbose=2
     )
-    y_pred = model.predict(X_val).flatten()
+
     def inv_scale(y_scaled):
         dummy = np.zeros((len(y_scaled), scaled.shape[1]))
         dummy[:,0] = y_scaled
-        inv = scaler.inverse_transform(dummy)[:,0]
-        return inv
+        return scaler.inverse_transform(dummy)[:,0]
+
     y_val_inv = inv_scale(y_val)
-    y_pred_inv = inv_scale(y_pred)
-    rmse = mean_squared_error(y_val_inv, y_pred_inv, squared=False)
+    y_pred_inv = inv_scale(model.predict(X_val).flatten())
+
+    rmse = np.sqrt(mean_squared_error(y_val_inv, y_pred_inv))
     mae = mean_absolute_error(y_val_inv, y_pred_inv)
     print(f"Validation RMSE: {rmse:.6f}, MAE: {mae:.6f}")
-    model.save(args.final_model or "xau_lstm_final.h5")
+
+    model.save(args.final_model or "xau_lstm_final.keras")
+
     plt.figure(figsize=(12,6))
     plt.plot(y_val_inv, label='Actual (val)')
     plt.plot(y_pred_inv, label='Predicted (val)')
@@ -115,30 +123,45 @@ def main(args):
     plt.ylabel('Price (USD)')
     plt.grid(True)
     plt.savefig(args.plot_path or "prediction_plot.png", dpi=150)
-    print("Plot saved.")
+    print("Validation plot saved.")
+
     n_steps = args.forecast_steps
     last_window = scaled[-seq_len:]
     preds = []
     window = last_window.copy()
-    for i in range(n_steps):
+
+    for _ in range(n_steps):
         input_w = window.reshape((1, seq_len, window.shape[1]))
-        p = model.predict(input_w)[0,0]
+        p = model.predict(input_w, verbose=0)[0,0]
         preds.append(p)
         window = np.vstack([window[1:], np.hstack([p, window[-1,1:]])])
+
     preds_inv = inv_scale(np.array(preds))
     print(f"Next {n_steps} step forecast (inverse-scaled):")
     print(preds_inv)
-    future_index = pd.date_range(start=data.index[-1], periods=n_steps+1, freq=args.resample or '15T')[1:]
+
+    future_index = pd.date_range(start=data.index[-1] + pd.Timedelta(minutes=15), periods=n_steps, freq=args.resample)
     df_fore = pd.DataFrame({'forecast': preds_inv}, index=future_index)
     df_fore.to_csv(args.forecast_out or "forecast_next.csv")
     print("Forecast saved to", args.forecast_out or "forecast_next.csv")
+
+    plt.figure(figsize=(12,6))
+    plt.plot(data[args.target], label='Historical')
+    plt.plot(df_fore.index, df_fore['forecast'], label='Forecast', color='red')
+    plt.legend()
+    plt.title('XAU/USD - Historical + Forecast')
+    plt.xlabel('Time')
+    plt.ylabel('Price (USD)')
+    plt.grid(True)
+    plt.savefig("historical_forecast_plot.png", dpi=150)
+    print("Historical + forecast plot saved.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', default='XAU_15m_data.csv', help='Path to CSV file')
     parser.add_argument('--datetime_col', default=None, help='Name of datetime column (infer if not given)')
     parser.add_argument('--target', default='Close', help='Target column name (default: Close)')
-    parser.add_argument('--resample', default=None, help="Optional resample rule like '15T','H','D'. If None, use original index.")
+    parser.add_argument('--resample', default='min', help="Optional resample rule like 'min', '15T','H','D'. If None, use original index.")
     parser.add_argument('--seq_len', type=int, default=96, help='Sequence length (default 96 => approx 24h for 15m data)')
     parser.add_argument('--val_split', type=float, default=0.2, help='Validation split fraction')
     parser.add_argument('--epochs', type=int, default=30)
